@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+    <meta charset="utf-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no"
+    >
+
+    <title>Getting Over It</title>
+
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #231F20;
+        }
+
+        #unity-container {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #unity-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: #231F20;
+        }
+
+        #loading {
+            position: fixed;
+            inset: 0;
+
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+
+            background: #231F20;
+            color: white;
+
+            font-family: Arial, sans-serif;
+
+            z-index: 9999;
+        }
+
+        #loading-text {
+            font-size: 28px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        #progress-container {
+            width: 350px;
+            max-width: 80%;
+            height: 12px;
+
+            background: #444;
+            border-radius: 6px;
+
+            overflow: hidden;
+        }
+
+        #progress {
+            width: 0%;
+            height: 100%;
+
+            background: white;
+
+            transition: width .15s;
+        }
+
+        #error {
+            display: none;
+
+            max-width: 800px;
+            margin-top: 20px;
+            padding: 15px;
+
+            color: #ff5555;
+
+            text-align: center;
+            white-space: pre-wrap;
+
+            font-family: monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="loading">
+
+        <div id="loading-text">
+            Loading Getting Over It...
+        </div>
+
+        <div id="progress-container">
+            <div id="progress"></div>
+        </div>
+
+        <div id="error"></div>
+
+    </div>
+
+    <div id="unity-container">
+
+        <canvas
+            id="unity-canvas"
+            tabindex="-1"
+            width="960"
+            height="600">
+        </canvas>
+
+    </div>
+
+<script>
+
+    /*
+     * ============================================================
+     * LOCAL GAME FILES
+     * ============================================================
+     *
+     * getting-over-it.html
+     *
+     * getting-over-it/
+     *     Build/
+     *         GettingOverIt.loader.js
+     *         GettingOverIt.framework.js
+     *         GettingOverIt.data.part1
+     *         ...
+     *         GettingOverIt.data.part27
+     *         GettingOverIt.wasm.part1
+     *         GettingOverIt.wasm.part2
+     */
+
+    const BUILD = "./getting-over-it/Build/";
+
+    const DATA_PARTS = 32;
+    const WASM_PARTS = 2;
+
+
+    /*
+     * ============================================================
+     * ELEMENTS
+     * ============================================================
+     */
+
+    const canvas =
+        document.getElementById("unity-canvas");
+
+    const loading =
+        document.getElementById("loading");
+
+    const loadingText =
+        document.getElementById("loading-text");
+
+    const progress =
+        document.getElementById("progress");
+
+    const errorBox =
+        document.getElementById("error");
+
+
+    /*
+     * ============================================================
+     * ERROR
+     * ============================================================
+     */
+
+    function showError(message) {
+
+        console.error(message);
+
+        loadingText.textContent =
+            "Getting Over It failed to load";
+
+        progress.style.display =
+            "none";
+
+        errorBox.style.display =
+            "block";
+
+        errorBox.textContent =
+            message;
+    }
+
+
+    /*
+     * ============================================================
+     * CREATE PART URLS
+     * ============================================================
+     */
+
+    function getParts(filename, count) {
+
+        const parts = [];
+
+        for (let i = 1; i <= count; i++) {
+
+            parts.push(
+                BUILD +
+                filename +
+                ".part" +
+                i
+            );
+        }
+
+        return parts;
+    }
+
+
+    /*
+     * ============================================================
+     * DOWNLOAD AND MERGE PARTS
+     * ============================================================
+     */
+
+    async function downloadParts(
+        parts,
+        label,
+        progressStart,
+        progressEnd
+    ) {
+
+        const buffers = [];
+
+        for (let i = 0; i < parts.length; i++) {
+
+            const url = parts[i];
+
+            loadingText.textContent =
+                "Loading " +
+                label +
+                " (" +
+                (i + 1) +
+                "/" +
+                parts.length +
+                ")";
+
+            console.log(
+                "Downloading:",
+                url
+            );
+
+            let response;
+
+            try {
+
+                response = await fetch(
+                    url,
+                    {
+                        method: "GET",
+                        cache: "no-store"
+                    }
+                );
+
+            } catch (error) {
+
+                throw new Error(
+                    "Network error while loading:\n\n" +
+                    url +
+                    "\n\n" +
+                    error.message
+                );
+            }
+
+            if (!response.ok) {
+
+                throw new Error(
+                    "Failed to load:\n\n" +
+                    url +
+                    "\n\nHTTP status: " +
+                    response.status
+                );
+            }
+
+            const buffer =
+                await response.arrayBuffer();
+
+            if (
+                !buffer ||
+                buffer.byteLength === 0
+            ) {
+
+                throw new Error(
+                    "The downloaded file was empty:\n\n" +
+                    url
+                );
+            }
+
+            buffers.push(buffer);
+
+
+            /*
+             * Update progress.
+             */
+
+            const partProgress =
+                (i + 1) / parts.length;
+
+            const percentage =
+                progressStart +
+                (
+                    partProgress *
+                    (progressEnd - progressStart)
+                );
+
+            progress.style.width =
+                percentage + "%";
+        }
+
+
+        /*
+         * Merge all pieces into one Blob.
+         */
+
+        const blob =
+            new Blob(buffers);
+
+        return URL.createObjectURL(blob);
+    }
+
+
+    /*
+     * ============================================================
+     * START GAME
+     * ============================================================
+     */
+
+    async function startGame() {
+
+        try {
+
+            /*
+             * ----------------------------------------------------
+             * DATA
+             * ----------------------------------------------------
+             */
+
+            const dataParts =
+                getParts(
+                    "GettingOverIt.data",
+                    DATA_PARTS
+                );
+
+            const dataUrl =
+                await downloadParts(
+                    dataParts,
+                    "Game data",
+                    0,
+                    50
+                );
+
+
+            /*
+             * ----------------------------------------------------
+             * WASM
+             * ----------------------------------------------------
+             */
+
+            const wasmParts =
+                getParts(
+                    "GettingOverIt.wasm",
+                    WASM_PARTS
+                );
+
+            const wasmUrl =
+                await downloadParts(
+                    wasmParts,
+                    "Game code",
+                    50,
+                    75
+                );
+
+
+            /*
+             * ----------------------------------------------------
+             * UNITY CONFIG
+             * ----------------------------------------------------
+             */
+
+            loadingText.textContent =
+                "Loading Unity...";
+
+            progress.style.width =
+                "75%";
+
+
+            const config = {
+
+                dataUrl:
+                    dataUrl,
+
+                frameworkUrl:
+                    BUILD +
+                    "GettingOverIt.framework.js",
+
+                codeUrl:
+                    wasmUrl,
+
+                streamingAssetsUrl:
+                    "./getting-over-it/StreamingAssets",
+
+                companyName:
+                    "Bennett Foddy",
+
+                productName:
+                    "Getting Over It",
+
+                productVersion:
+                    "1.7"
+            };
+
+
+            /*
+             * ----------------------------------------------------
+             * LOAD UNITY LOADER
+             * ----------------------------------------------------
+             */
+
+            const script =
+                document.createElement("script");
+
+            script.src =
+                BUILD +
+                "GettingOverIt.loader.js";
+
+
+            script.onload =
+                function() {
+
+                    console.log(
+                        "Getting Over It loader loaded."
+                    );
+
+
+                    if (
+                        typeof createUnityInstance !==
+                        "function"
+                    ) {
+
+                        showError(
+                            "GettingOverIt.loader.js loaded, " +
+                            "but createUnityInstance was not found."
+                        );
+
+                        return;
+                    }
+
+
+                    loadingText.textContent =
+                        "Starting Getting Over It...";
+
+
+                    /*
+                     * ------------------------------------------------
+                     * START UNITY
+                     * ------------------------------------------------
+                     */
+
+                    createUnityInstance(
+                        canvas,
+                        config,
+                        function(value) {
+
+                            const percent =
+                                75 +
+                                value * 25;
+
+                            progress.style.width =
+                                percent + "%";
+
+                        }
+
+                    ).then(
+                        function(unityInstance) {
+
+                            console.log(
+                                "Getting Over It started!"
+                            );
+
+                            loading.style.display =
+                                "none";
+
+                        }
+
+                    ).catch(
+                        function(error) {
+
+                            showError(
+                                "Unity failed to start:\n\n" +
+                                error
+                            );
+
+                        }
+                    );
+
+                };
+
+
+            script.onerror =
+                function() {
+
+                    showError(
+                        "Could not load the Getting Over It loader.\n\n" +
+
+                        "Make sure this file exists:\n\n" +
+
+                        BUILD +
+                        "GettingOverIt.loader.js\n\n" +
+
+                        "Expected location:\n\n" +
+
+                        "getting-over-it/Build/" +
+                        "GettingOverIt.loader.js"
+                    );
+
+                };
+
+
+            document.head.appendChild(
+                script
+            );
+
+        }
+
+        catch (error) {
+
+            showError(
+                "Getting Over It failed to load:\n\n" +
+                error.message
+            );
+
+        }
+    }
+
+
+    /*
+     * ============================================================
+     * START
+     * ============================================================
+     */
+
+    startGame();
+
+</script>
+
+</body>
+</html>
